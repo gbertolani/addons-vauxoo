@@ -27,7 +27,7 @@
     "website": "http://www.vauxoo.com/",
     "license": "AGPL-3",
     "depends": [
-        "report",
+        "report_xlsx",
     ],
     "external_dependencies": {
         'python': ['cssutils']

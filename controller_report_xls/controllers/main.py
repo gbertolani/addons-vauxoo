@@ -9,13 +9,15 @@ from cssutils import parseString
 from werkzeug import url_decode  # pylint: disable=E0611
 from lxml import etree
 
-import simplejson
+
+import json
 import xlwt
 
-import StringIO
+from io import StringIO
+from io import BytesIO
 
-from openerp.addons.report.controllers import main
-from openerp.addons.web.http import route, request  # pylint: disable=F0401
+from odoo.addons.report_xlsx.controllers.main import ReportController
+from odoo.http import route, request  # pylint: disable=F0401
 from ..controllers.xfstyle import css2excel
 
 try:
@@ -251,8 +253,8 @@ def get_xls(html, lang_sep=None):
     wb = xlwt.Workbook(style_compression=2)
     ws = wb.add_sheet('Sheet 1')
     parser = etree.HTMLParser()
-    tree = etree.parse(StringIO.StringIO(html), parser)
-    root = tree.getroot()
+    tree = etree.fromstring(html, parser)
+    root = tree.getroottree()
     html = root
     row = 0
     col = 0
@@ -273,7 +275,7 @@ def get_xls(html, lang_sep=None):
     if tables:
         row = write_tables_to_excel(ws, row, col, tables, html, table_styles,
                                     lang_sep)
-    stream = StringIO.StringIO()
+    stream = BytesIO()
     wb.save(stream)
     html_xpath.cache_clear()
     return stream.getvalue()
@@ -281,18 +283,16 @@ def get_xls(html, lang_sep=None):
 
 def get_lang_sep(req, context):
     """Get Decimal & Thousands separators on Language being used"""
-    lang_obj = req.registry['res.lang']
+    lang_obj = req.env['res.lang']
     lang = context.get('lang', 'en_US')
-    cur, uid = req.cr, req.uid
-    lang_ids = lang_obj.search(cur, uid, [('code', '=', lang)])
-    lang_brw = lang_obj.browse(cur, uid, lang_ids[0])
+    lang_brw = lang_obj.search([('code', '=', lang)], limit=1)
     return {
         'decimal_point': lang_brw.decimal_point,
         'thousands_sep': lang_brw.thousands_sep,
     }
 
 
-class ReportController(main.ReportController):
+class ReportController(ReportController):
 
     @route(['/report/download'], type='http', auth="user")
     def report_download(self, data, token):
@@ -305,7 +305,7 @@ class ReportController(main.ReportController):
         if response is None:
             return response
 
-        requestcontent = simplejson.loads(data)
+        requestcontent = json.loads(data)
         url = requestcontent[0]
 
         # decoding the args represented in JSON
@@ -315,12 +315,17 @@ class ReportController(main.ReportController):
 
         new_data = dict(new_data)
         if new_data.get('context'):
-            context = simplejson.loads(new_data['context']) or {}
+            context = json.loads(new_data['context']) or {}
 
         if not context.get('xls_report'):
             return response
 
         reportname = url.split('/report/pdf/')[1].split('?')[0]
+        if '/' in reportname:
+            reportname = reportname.split('/')[0]
+
+        report = request.env['ir.actions.report']._get_report_from_name(reportname)
+        filename = "%s.%s" % (report.name, 'pdf')
         # As headers have been implement as as list there are no unique headers
         # adding them just result into duplicated headers that are not
         # unique will convert them into dict update the required header and
@@ -330,45 +335,56 @@ class ReportController(main.ReportController):
             {'Content-Disposition':
                 'attachment; filename=%s.xls;' % reportname})
         response.headers.clear()
-        for key, value in headers.iteritems():
+        for key, value in headers.items():
             response.headers.add(key, value)
         return response
 
     @route([
-        '/report/<path:converter>/<reportname>',
-        '/report/<path:converter>/<reportname>/<docids>',
+        '/report/converter>/<reportname>',
+        '/report/converter>/<reportname>/<docids>',
     ], type='http', auth='user', website=True)
     def report_routes(self, reportname, docids=None, converter=None, **data):
         """Intercepts original method from report module by using a key in context
         sticked when print a report from a wizard ('xls_report') if True this
         method will return a XLS File otherwise it will return the customary
         PDF File"""
-        report_obj = request.registry['report']
-        cr, uid, context = request.cr, request.uid, request.context
-        origin_docids = docids
+
+
+        report = request.env['ir.actions.report']._get_report_from_name(reportname)
+        context = request.context.copy()
+
+        document_ids = []
         if docids:
-            docids = [int(idx) for idx in docids.split(',')]
-        options_data = None
+            document_ids = [int(i) for i in docids.split(',')]
+
+        old_data = data.copy()
         if data.get('options'):
-            options_data = simplejson.loads(data['options'])
+            data.update(json.loads(data.pop('options')))
         if data.get('context'):
-            # Ignore 'lang' here, because the context in data is the one from
-            # the webclient *but* if the user explicitely wants to change the
-            # lang, this mechanism overwrites it.
-            data_context = simplejson.loads(data['context']) or {}
+            data['context'] = json.loads(data['context'])
+            if data['context'].get('lang'):
+                del data['context']['lang']
+            context.update(data['context'])
 
-            if data_context.get('lang'):
-                del data_context['lang']
-            context.update(data_context)
 
-        if not context.get('xls_report'):
+        xls_report = context.get('xls_report', False)
+        if not xls_report:
+            rep_data = report._get_rendering_context(document_ids, data)
+            xls_report = rep_data.get('xls_report', False)
+
+        if not xls_report:
             return super(ReportController, self).report_routes(
-                reportname, docids=origin_docids, converter=converter, **data)
+                reportname, docids=origin_docids, converter=converter, **old_data)
 
-        html = report_obj.get_html(cr, uid, docids, reportname,
-                                   data=options_data, context=context)
+        context.update({
+            'xls_report': True
+        })
+        request.context = context
+
+        html = report.with_context(context).render_qweb_html(document_ids, data=data)[0]
         xls_stream = get_xls(html, get_lang_sep(request, context))
-        xlshttpheaders = [('Content-Type', 'application/vnd.ms-excel'),
-                          ('Content-Length', len(xls_stream)),
-                          ]
+        xlshttpheaders = [
+            ('Content-Type', 'application/vnd.ms-excel'),
+            ('Content-Length', len(xls_stream)),
+        ]
         return request.make_response(xls_stream, headers=xlshttpheaders)
