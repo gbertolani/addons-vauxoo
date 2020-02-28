@@ -374,7 +374,7 @@ class ReportController(ReportController):
 
         if not xls_report:
             return super(ReportController, self).report_routes(
-                reportname, docids=origin_docids, converter=converter, **old_data)
+                reportname, docids=docids, converter=converter, **old_data)
 
         context.update({
             'xls_report': True
