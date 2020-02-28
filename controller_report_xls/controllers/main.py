@@ -154,8 +154,9 @@ def get_odoo_style(html, style, node):
                 style.update(dict(item.split(":") for item in
                              text_adapt(styleclass).split(";") if item != ''))
     if node.attrib.get('style', False):
+        style_val = node.attrib.get('style').replace(' ', '')
         style.update(dict(item.split(":") for item in
-                     node.attrib.get('style').split(";") if item != ''))
+                     style_val.split(";") if item != ''))
     return style
 
 
