@@ -351,38 +351,35 @@ class ReportController(ReportController):
         PDF File"""
 
 
-        report = request.env['ir.actions.report']._get_report_from_name(reportname)
-        context = request.context.copy()
+        report_obj = request.env['ir.actions.report']
+        report = report_obj._get_report_from_name(reportname)
+        context = dict(request.env.context)
 
-        document_ids = []
+
+        origin_docids = docids
         if docids:
-            document_ids = [int(i) for i in docids.split(',')]
-
-        old_data = data.copy()
+            docids = [int(idx) for idx in docids.split(',')]
+        options_data = None
         if data.get('options'):
-            data.update(json.loads(data.pop('options')))
+            options_data = json.loads(data['options'])
         if data.get('context'):
-            data['context'] = json.loads(data['context'])
-            if data['context'].get('lang'):
-                del data['context']['lang']
-            context.update(data['context'])
+            # Ignore 'lang' here, because the context in data is the one from
+            # the webclient *but* if the user explicitely wants to change the
+            # lang, this mechanism overwrites it.
+            data_context = json.loads(data['context']) or {}
 
+            if data_context.get('lang'):
+                del data_context['lang']
+            context.update(data_context)
 
         xls_report = context.get('xls_report', False)
         if not xls_report:
-            rep_data = report._get_rendering_context(document_ids, data)
-            xls_report = rep_data.get('xls_report', False)
-
-        if not xls_report:
             return super(ReportController, self).report_routes(
-                reportname, docids=docids, converter=converter, **old_data)
+                    reportname, docids=origin_docids,
+                    converter=converter, **data)
 
-        context.update({
-            'xls_report': True
-        })
-        request.context = context
-
-        html = report.with_context(context).render_qweb_html(document_ids, data=data)[0]
+        html = report.with_context(context).render_qweb_html(
+                docids, data=options_data)[0]
         xls_stream = get_xls(html, get_lang_sep(request, context))
         xlshttpheaders = [
             ('Content-Type', 'application/vnd.ms-excel'),
