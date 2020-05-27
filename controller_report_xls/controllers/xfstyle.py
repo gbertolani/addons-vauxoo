@@ -385,5 +385,6 @@ def css2excel(css):
     style.pattern = pattern
     style.pattern.pattern = 1
     style.alignment = align
-    style.num_format_str = '#,##0.00'
+    num_format_str = css.get('format', '#,##0.00')
+    style.num_format_str = num_format_str
     return style
