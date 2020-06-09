@@ -6,6 +6,7 @@ import logging
 import cssutils
 from cssutils import parseString
 
+from werkzeug.exceptions import HTTPException
 from werkzeug import url_decode  # pylint: disable=E0611
 from lxml import etree
 
@@ -19,6 +20,9 @@ from io import BytesIO
 from odoo.addons.report_xlsx.controllers.main import ReportController
 from odoo.http import route, request  # pylint: disable=F0401
 from ..controllers.xfstyle import css2excel
+
+from odoo.exceptions import UserError, ValidationError
+from odoo.addons.base.models.qweb import QWebException
 
 try:
     from functools import lru_cache
@@ -378,9 +382,19 @@ class ReportController(ReportController):
                     reportname, docids=origin_docids,
                     converter=converter, **data)
 
-        html = report.with_context(context).render_qweb_html(
-                docids, data=options_data)[0]
-        xls_stream = get_xls(html, get_lang_sep(request, context))
+        try:
+            html = report.with_context(context).render_qweb_html(
+                    docids, data=options_data)[0]
+            xls_stream = get_xls(html, get_lang_sep(request, context))
+        except QWebException as e:
+            if isinstance(e.error, UserError) or \
+                    isinstance(e.error, ValidationError):
+                raise e.error
+            else:
+                raise e
+        except (UserError, ValidationError) as odoo_error:
+            raise odoo_error
+
         xlshttpheaders = [
             ('Content-Type', 'application/vnd.ms-excel'),
             ('Content-Length', len(xls_stream)),
