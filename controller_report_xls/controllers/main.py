@@ -229,7 +229,10 @@ def write_cols_to_excel(sheet, row, col, rowspan, nodes, html, styles,
             if td.attrib.get('colspan', False):
                 colspan = int(td.attrib.get('colspan')) - 1
             text = text_adapt(" ".join([x for x in td.itertext()]))
-            new_text = string_to_number(text, lang_sep)
+            cell_format = new_styles.get('format', False)
+            new_text = text
+            if cell_format != '@':
+                new_text = string_to_number(text, lang_sep)
             cell_styles = css2excel(new_styles)
             sheet.write_merge(row, row+rowspan,
                               col, col+colspan,
