@@ -103,8 +103,8 @@ def unformat_number(value, lang_sep):
         if value is '-77' it will return -77 of type integer
         if value is '-7,7.-' it will return '-7,7.-' of type string"""
 
-    thousands_sep = lang_sep.get('thousands_sep', ',')
-    decimal_point = lang_sep.get('decimal_point', '.')
+    thousands_sep = ''
+    decimal_point = '.'
 
     if not is_formatted_number(value, thousands_sep, decimal_point):
         return value
