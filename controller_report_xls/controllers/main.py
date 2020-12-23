@@ -103,8 +103,25 @@ def unformat_number(value, lang_sep):
         if value is '-77' it will return -77 of type integer
         if value is '-7,7.-' it will return '-7,7.-' of type string"""
 
-    thousands_sep = ''
-    decimal_point = '.'
+    # decimal_point = ','
+    # thousands_sep = '.'
+
+    #Lo calculamos segun el numero
+    ip = value.index('.') if '.' in (value or '') else -1
+    ic = value.index(',') if ',' in (value or '') else -1
+    if ip == -1 and ic == -1:
+        thousands_sep = ''
+        decimal_point = ','
+    if ip > ic:
+        decimal_point = '.'
+        thousands_sep = ''
+        if ic != -1:
+            thousands_sep = ','
+    else:
+        decimal_point = ','
+        thousands_sep = ''
+        if ip != -1:
+            thousands_sep = '.'
 
     if not is_formatted_number(value, thousands_sep, decimal_point):
         return value
